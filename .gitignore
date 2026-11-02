@@ -1,0 +1,14 @@
+node_modules/
+dist/
+public/assets/*
+!public/assets/.gitkeep
+.cache/
+results/
+.venv*/
+__pycache__/
+*.pyc
+*.nbc
+*.nbi
+*.log
+.env
+.env.*

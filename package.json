@@ -1,0 +1,27 @@
+{
+  "name": "meshlet-terrain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Three.js WebGPU meshlet terrain with HLOD, baked diffuse path lighting, volumetric weather and GPU runoff",
+  "license": "ISC",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "postinstall": "patch-package",
+    "assets": "node scripts/assets.mjs",
+    "assets:check": "node scripts/assets.mjs --check",
+    "test": "node scripts/verify-terrain.mjs"
+  },
+  "dependencies": {
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "patch-package": "8.0.1",
+    "vite": "8.3.5"
+  }
+}

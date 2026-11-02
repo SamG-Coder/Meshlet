@@ -1,0 +1,178 @@
+{
+  "version": "v0.1.0",
+  "url": "https://github.com/SamG-Coder/Meshlet/releases/download/v0.1.0/terrain-assets-v0.1.0.tar.gz",
+  "bytes": 1022802559,
+  "sha256": "37ddff2dec1b9e71c7c531e0b84467ae0c9eaf13f9edca041e0824529cfa2db1",
+  "files": [
+    {
+      "path": "public/assets/badlands-v3/simulation.json",
+      "bytes": 1818,
+      "sha256": "11ffa21af15d96c0f3dea1cbcf209ce20d26a28658c7c72a0fb2f1e2fc9b20c9"
+    },
+    {
+      "path": "public/assets/badlands-v3/height.bin",
+      "bytes": 268435456,
+      "sha256": "e310172b0dffc719291eaf55f8abd3b277877c3e2b8114fbf641062da818adc7"
+    },
+    {
+      "path": "public/assets/badlands-v3/preview-fields.bin",
+      "bytes": 46137344,
+      "sha256": "f268b04dd99aa06178a852cb00fc0be3eb3cb90bbc24f1a5be1c6f383df2f9cf"
+    },
+    {
+      "path": "public/assets/badlands-v3/albedo.jpg",
+      "bytes": 7715968,
+      "sha256": "c1a6241a7e78dc873d75fe409ff7da40bf5bda085ffa4086ce4309587cf9e86d"
+    },
+    {
+      "path": "public/assets/badlands-v3/orm.png",
+      "bytes": 73382780,
+      "sha256": "386f573f4165830cc357482bdb5c80a56f256aa7ee15f7e6a1e21d607f292cf5"
+    },
+    {
+      "path": "public/assets/badlands-v3/terrain-normal.png",
+      "bytes": 135961964,
+      "sha256": "87095b253083cb4afb6dd9b18131887e553f9b0d5ced1a22ae7e82a51c56c775"
+    },
+    {
+      "path": "public/assets/ground-generated-v3/manifest.json",
+      "bytes": 2828,
+      "sha256": "a7053148f0a1a7b2b1a52655ba8faab6ec8fea11ef20f714c94409af08a49b0e"
+    },
+    {
+      "path": "public/assets/ground-generated-v3/color-array.bin",
+      "bytes": 167772160,
+      "sha256": "17764c551e1861f433342d6b25f5a6061766fe1c3926a61ea52dccfc384a4813"
+    },
+    {
+      "path": "public/assets/ground-generated-v3/normal-array.bin",
+      "bytes": 167772160,
+      "sha256": "dc5675ed4b155848ed436ca154e9e811a2c5c4cf996b7c9593ab03be716888b2"
+    },
+    {
+      "path": "public/assets/ground-generated-v3/material-array.bin",
+      "bytes": 167772160,
+      "sha256": "6a73b49773ce61064c7d795d17695c4f4d259e0d4a3c599b05c5d43cbf24ebb1"
+    },
+    {
+      "path": "public/assets/badlands-lighting-hq/lighting.json",
+      "bytes": 1055,
+      "sha256": "0c17bcce3a46d43443eb33bcfad563b841474eda360a67db2b60ca301210a3a1"
+    },
+    {
+      "path": "public/assets/badlands-lighting-hq/sky-irradiance.bin",
+      "bytes": 134217728,
+      "sha256": "6d08c1d9778ad3f60c480fa488991e01b35fe942ca95bbd71a8cfc62c9eef6eb"
+    },
+    {
+      "path": "public/assets/badlands-lighting-hq/sun-bounce.bin",
+      "bytes": 134217728,
+      "sha256": "7238fda0d378daccc9ff38e858664e70405deb8b86a200f34798fa98117a7788"
+    },
+    {
+      "path": "public/assets/badlands-lighting-hq/sun-visibility.png",
+      "bytes": 3260859,
+      "sha256": "82a30de5b8c4916d02892126c5f1183ef6491fccb9ec58a3b9273995c0a17454"
+    },
+    {
+      "path": "public/assets/badlands-hydrology/drainage.bin",
+      "bytes": 16777216,
+      "sha256": "aa78968da4d26af6afef3e9ae2dd4fe4c43c7d3cb5feff99050f9226f02db17e"
+    },
+    {
+      "path": "public/assets/badlands-hydrology/hydrology.json",
+      "bytes": 1000,
+      "sha256": "8cda4fc8a63131a4ce01e407127d71fc7fca9ff4c27bc6793ad2c6afe4ef1fdd"
+    },
+    {
+      "path": "public/assets/badlands-hydrology/retention.bin",
+      "bytes": 16777216,
+      "sha256": "c3b563ec85172026950250f38cb9ce092e401ddba956bda5c53c6629d0d9f2ac"
+    },
+    {
+      "path": "public/assets/badlands-hydrology/river-links.bin",
+      "bytes": 203632,
+      "sha256": "d6baa2623a6dfdb0019120eead101ecadbc3418e30c0270e9285459c0ddb90b7"
+    },
+    {
+      "path": "public/assets/cloud-volume/noise.json",
+      "bytes": 175,
+      "sha256": "d19de2d1b2915595f653aafa3212e6efc6b878806c9be46799f5d9616ea1c68a"
+    },
+    {
+      "path": "public/assets/cloud-volume/shape-rgba.bin",
+      "bytes": 8388608,
+      "sha256": "50d4d3d11538842d97636697528309e68f8111e0247d1dcb7b19cb3d15b0bed8"
+    },
+    {
+      "path": "public/assets/cloud-volume/weather-r.bin",
+      "bytes": 262144,
+      "sha256": "1b4b645a7df7d282f8d02ad36c59cf130e605ab1cedadce8094f5b34c14802fe"
+    },
+    {
+      "path": "public/assets/rain-impacts/impact-array.bin",
+      "bytes": 2097152,
+      "sha256": "d3221c0cd3cd3dc6673798ff5d10ee95553ec95bd6bfa4b3431530dbb805618f"
+    },
+    {
+      "path": "public/assets/rain-impacts/impacts.json",
+      "bytes": 286,
+      "sha256": "c768ed0f3dbc08a149dd573060fc0ec254a6f1eb32cf2cf6f7630a1d1cb655c0"
+    },
+    {
+      "path": "public/assets/generated-ground/prompts.json",
+      "bytes": 16611,
+      "sha256": "6efd6e3065371ad6ade51437b781753fe072dbeed27459f100cd745b328356a2"
+    },
+    {
+      "path": "public/assets/generated-ground/source-01.png",
+      "bytes": 4122979,
+      "sha256": "6d6b5db1616cf25b2d1c4cd6e7e73ba47e8ad40136d862bed1100bf1c51f8b86"
+    },
+    {
+      "path": "public/assets/generated-ground/source-02.png",
+      "bytes": 4339873,
+      "sha256": "cf116b95f8ee16588cef90c25cfcf14a716e1f6b0ddb244b464b7fb16cb219d1"
+    },
+    {
+      "path": "public/assets/generated-ground/source-03.png",
+      "bytes": 4214505,
+      "sha256": "2c4eaca096643cc4400ebcea3a35ef89d87325c1a0df2d2bb7c799314f0736f3"
+    },
+    {
+      "path": "public/assets/generated-ground/source-04.png",
+      "bytes": 4162557,
+      "sha256": "f403bdeff69caacbaa63c87074584b257e6990f1ca7f1921509a0253c1937a10"
+    },
+    {
+      "path": "public/assets/generated-ground/source-05.png",
+      "bytes": 4363846,
+      "sha256": "23db4561893d0f26b9e6fd313dbe6641da6b4213bcc015d9a0e81e44e947f2b3"
+    },
+    {
+      "path": "public/assets/generated-ground/source-06.png",
+      "bytes": 4285166,
+      "sha256": "06dbf794fdbc78b902189f60468951f200974ff63ad1a7940de62baa139f6667"
+    },
+    {
+      "path": "public/assets/generated-ground/source-07.png",
+      "bytes": 4370820,
+      "sha256": "5be4ddd478fd710cbe2d63bfaf524cad7e55c65e5ea8f5e917cc7f0286a4c167"
+    },
+    {
+      "path": "public/assets/generated-ground/source-08.png",
+      "bytes": 4150719,
+      "sha256": "ecaa67d17e9c9391b01c9bd343836499f027ce0b963ded8a958b5042ad21d48d"
+    },
+    {
+      "path": "public/assets/generated-ground/source-09.png",
+      "bytes": 4321168,
+      "sha256": "eed523ed64d391505cdc65cced1594741b0421cd0eb072c8d8aa9f8ef69b3c94"
+    },
+    {
+      "path": "public/assets/generated-ground/source-10.png",
+      "bytes": 4356611,
+      "sha256": "d397e417c9f2b362da6421f672c868946ccebe0cf51a7e787c5338641e8de842"
+    }
+  ]
+}

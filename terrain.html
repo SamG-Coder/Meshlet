@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Strata / badlands terrain</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/src/terrain.css"></head><body>
+<div id="viewport"></div><div id="crosshair">+</div>
+<header><div class="eyebrow">STRATA / EROSION LABORATORY</div><h1>Across the badlands.</h1><p>Pale strata. Branching gullies. Broken stone.</p><p id="area"></p></header>
+<aside>
+ <div class="section">01 / SURFACE</div>
+ <label>Material inspection<select id="surface"><option value="natural">Pale rock / baked fractures</option><option value="sediment">Deposited material composition</option><option value="erosion">Cumulative erosion</option><option value="deposition">Cumulative deposition</option><option value="wetness">Source water / retained moisture</option></select></label>
+ <label>HLOD tile budget<select id="budget"><option value="96">96 tiles / responsive</option><option value="192">192 tiles / detailed</option><option value="384">384 tiles / high detail</option><option value="768" selected>Maximum / 768 tiles</option></select></label>
+ <label>Meshlet detail<select id="lod"><option value="2">Adaptive / 2 px</option><option value="0.7">Adaptive / 0.7 px</option><option value="0" selected>Full resident detail</option></select></label>
+ <label class="check"><input type="checkbox" id="clusters">Show meshlet clusters</label>
+ <details id="lighting-controls"><summary>Lighting / clouds</summary>
+  <label>Cloud cover<input id="cloud-cover" aria-label="Cloud cover" type="range" min="0" max="0.85" step="0.01" value="0.52"></label>
+  <label>Exposure<input id="exposure" aria-label="Exposure" type="range" min="0.5" max="2" step="0.05" value="1.00"></label>
+  <label class="check"><input id="cloud-pause" type="checkbox">Freeze clouds</label>
+ </details>
+ <p id="lighting-status" class="fine">Loading baked lighting...</p>
+ <details id="water-controls"><summary>Rain / rivers</summary>
+  <label>Rainfall under clouds<input id="rain-rate" aria-label="Rainfall under clouds" type="range" min="0" max="100" step="5" value="0"></label>
+  <label>Weather time<select id="weather-speed"><option value="1">Real time</option><option value="10">10 seconds / second</option><option value="30" selected>30 seconds / second</option><option value="60">Up to 1 minute / second</option></select></label>
+  <button id="rain-test">Test rain → runoff → dry / 75 s</button>
+  <div class="buttons"><button id="rain-stop">Stop rain</button><button id="water-reset">Reset water</button></div>
+  <button id="solver-check">Check flow / water balance</button>
+ </details>
+ <p id="water-status" class="fine">Dry ground / rain follows the clouds</p>
+ <div class="section">02 / EXPLORE</div>
+ <button id="camera-mode">Walk mode / F to fly</button>
+ <div class="buttons"><button id="overview">Region</button><button id="ridge">Ridge</button><button id="ground">Ground</button><button id="river">River</button></div>
+ <button id="measure">Measure settled frames</button><button id="movement">Test HLOD movement / 220 m</button>
+ <p id="status">Loading erosion bake...</p><p id="result"></p><p class="fine" id="provenance"></p>
+</aside>
+<footer><div><small>POTENTIAL TRIANGLES</small><strong id="logical">...</strong></div><div><small>RESIDENT / DRAWN</small><strong id="triangles">...</strong></div><div><small>FRAME RATE</small><strong id="fps">...</strong></div><div><small>TRACKED GPU</small><strong id="memory">...</strong></div></footer>
+<div class="controls">CLICK OR DRAG TO LOOK / ESC RELEASE / WASD MOVE / F WALK-FLY / Q E FLY DOWN-UP / SHIFT FAST</div>
+<script type="module" src="/src/terrain.js"></script></body></html>

@@ -1,0 +1,527 @@
+diff --git a/node_modules/three/examples/jsm/pipelines/MeshletDrawingPipeline.js b/node_modules/three/examples/jsm/pipelines/MeshletDrawingPipeline.js
+index 34dfd41..fc2e438 100644
+--- a/node_modules/three/examples/jsm/pipelines/MeshletDrawingPipeline.js
++++ b/node_modules/three/examples/jsm/pipelines/MeshletDrawingPipeline.js
+@@ -23,11 +23,11 @@ import {
+ } from 'three/webgpu';
+ 
+ import {
+-	Fn, If, Loop, vec2, vec3, vec4, uvec4, int, uint, float, max, min, clamp, ceil, log2, select, dot, bool, distance, length, normalize, textureLoad, ivec2, mat4, sqrt,
++	Fn, If, Loop, vec2, vec3, vec4, uvec2, uvec4, int, uint, float, max, min, clamp, ceil, log2, select, dot, bool, distance, length, normalize, textureLoad, ivec2, mat4, sqrt,
+ 	storage, uniform, uniformArray, instanceIndex, vertexIndex, varying, context as contextNode, overrideNodes, Return,
+ 	modelWorldMatrix, modelWorldMatrixInverse, modelNormalMatrix, modelPosition, modelViewPosition, mat3,
+ 	positionLocal, positionPrevious, normalLocal, transformNormal, velocity, materialColor,
+-	cameraViewMatrix, atomicAdd, atomicStore, atomicLoad, workgroupId, localId, floatBitsToUint, workgroupArray, workgroupBarrier, packHalf2x16, unpackHalf2x16
++	cameraViewMatrix, atomicAdd, atomicStore, atomicLoad, atomicAnd, atomicOr, workgroupId, localId, floatBitsToUint, workgroupArray, workgroupBarrier, packHalf2x16, unpackHalf2x16
+ } from 'three/tsl';
+ 
+ import { createMeshlets, ready as clusterProcessingReady, MESHLET_SIZE, MAX_LODS } from '../utils/MeshletGeometryUtils.js';
+@@ -65,7 +65,7 @@ const COUNTER_READBACK_INTERVAL = 30;
+ const OCCLUSION_MIN_CULLED = 0.3;
+ const OCCLUSION_PROBE_PROJECTIONS = 3;
+ 
+-const MAX_WORK_ITEMS = 1 << 20;
++const MAX_WORK_ITEMS = 1 << 23; // 128 MiB of 16-byte queue items, WebGPU default binding limit
+ const MAX_WORKGROUPS = 65535;
+ 
+ // the culling of all batches of a render list: one thread per cluster of the visible objects, the parameters of the
+@@ -98,6 +98,7 @@ const CULLED = 255;
+ const LOD_MASK = 255;
+ const OCCLUDED = 256;
+ const FAR = 512;
++const FRUSTUM_INSIDE = 1024;
+ 
+ // the flags of a batch
+ 
+@@ -368,7 +369,7 @@ function cacheAttributes( getAttribute ) {
+  */
+ function isDeformedMaterial( material ) {
+ 
+-	return material.isNodeMaterial === true && material.positionNode !== null && material.positionNode !== undefined;
++	return material.userData.meshletConservativeBounds !== true && material.isNodeMaterial === true && material.positionNode !== null && material.positionNode !== undefined;
+ 
+ }
+ 
+@@ -824,9 +825,13 @@ class MeshletCulling {
+ 
+ 		// the work queues of the batches — one item is a cluster of a visible object
+ 
+-		const workQueue = storage( this.queueAttribute, 'uvec4' );
++		const workQueue = storage( this.queueAttribute, 'uvec2' );
+ 
+-		this.workQueue = workQueue;
++		// Keep the shared queue interface compatible with VisibilityBufferDrawingPipeline.
++		this.workQueue = { element: ( index ) => {
++			const item = workQueue.element( index );
++			return uvec4( item.x, item.y, uint( MESHLET_SIZE ), uint( 0 ) );
++		} };
+ 
+ 		// the object of each cluster of the visible objects
+ 
+@@ -844,7 +849,7 @@ class MeshletCulling {
+ 
+ 		// the visibility of the clusters of all objects in the last frame, for the occlusion culling
+ 
+-		const clusterVisibility = occlusion !== null ? storage( this.visibilityAttribute, 'uint' ) : null;
++		const clusterVisibility = occlusion !== null ? storage( this.visibilityAttribute, 'uint' ).toAtomic() : null;
+ 
+ 		this.bufferNodes = [
+ 			[ instanceWorld, 'worldAttribute' ], [ this.worldWrite, 'worldAttribute' ], [ instanceBounds, 'boundsAttribute' ], [ this.boundsWrite, 'boundsAttribute' ],
+@@ -914,6 +919,7 @@ class MeshletCulling {
+ 			const lodLevel = uint( CULLED ).toVar();
+ 			const clusterCount = uint( 0 ).toVar();
+ 			const scaleBits = uint( 0 ).toVar();
++			const fullyInside = bool( false ).toVar();
+ 
+ 			// the scale of the object and the margin of its deformed positions for the cluster culling, as half floats rounded
+ 			// up. the binding of the bounds would exceed the storage buffers of the cluster culling with occlusion culling
+@@ -940,10 +946,12 @@ class MeshletCulling {
+ 				const cullBounds = deformBounds( center, radius );
+ 
+ 				const visible = bool( true ).toVar();
++				fullyInside.assign( true );
+ 
+ 				Loop( { start: 0, end: 6 }, ( { i } ) => {
+ 
+ 					const plane = frustumPlanes.element( i );
++					If( dot( plane.xyz, cullBounds.xyz ).add( plane.w ).lessThanEqual( cullBounds.w ), () => { fullyInside.assign( false ); } );
+ 
+ 					If( dot( plane.xyz, cullBounds.xyz ).add( plane.w ).lessThan( cullBounds.w.negate() ), () => {
+ 
+@@ -1044,7 +1052,7 @@ class MeshletCulling {
+ 
+ 			If( slot.lessThan( objectEnd ), () => {
+ 
+-				instanceRecord.element( slot ).assign( uvec4( firstCluster, lodLevel.bitOr( batch.shiftLeft( 16 ) ), scaleBits, slotData ) );
++				instanceRecord.element( slot ).assign( uvec4( firstCluster, lodLevel.bitOr( select( fullyInside, uint( FRUSTUM_INSIDE ), uint( 0 ) ) ).bitOr( batch.shiftLeft( 16 ) ), scaleBits, slotData ) );
+ 
+ 			} );
+ 
+@@ -1110,6 +1118,15 @@ class MeshletCulling {
+ 			const local = slot.sub( uint( batchObjects.x ) );
+ 			const maxChunks = uint( batchQueues.w );
+ 			const visibilityIndex = uint( batchQueues.z ).add( local.mul( maxChunks ) ).add( chunk );
++			// Eight four-bit LOD tags per word (0 = invisible, 1..6 = visible LOD).
++			// Atomics preserve adjacent tags written by other cluster invocations.
++			const visibilityShift = visibilityIndex.bitAnd( 7 ).mul( 4 );
++			const visibilityWord = () => clusterVisibility.element( visibilityIndex.shiftRight( 3 ) );
++			const readVisibility = () => atomicLoad( visibilityWord() ).shiftRight( visibilityShift ).bitAnd( 15 );
++			const writeVisibility = ( value ) => {
++				atomicAnd( visibilityWord(), uint( 15 ).shiftLeft( visibilityShift ).bitNot() );
++				atomicOr( visibilityWord(), uint( value ).shiftLeft( visibilityShift ) );
++			};
+ 
+ 			// the first triangle of the level in the geometry pool, the draws read the triangles of all geometries
+ 
+@@ -1125,13 +1142,13 @@ class MeshletCulling {
+ 
+ 					If( record.y.bitAnd( OCCLUDED ).notEqual( uint( 0 ) ), () => {
+ 
+-						If( clusterVisibility.element( visibilityIndex ).notEqual( lodLevel.add( 1 ) ), () => {
++						If( readVisibility().notEqual( lodLevel.add( 1 ) ), () => {
+ 
+ 							atomicAdd( counters.element( this.occludedCounter ), 1 );
+ 
+ 						} );
+ 
+-						clusterVisibility.element( visibilityIndex ).assign( uint( 0 ) );
++						writeVisibility( uint( 0 ) );
+ 
+ 						Return();
+ 
+@@ -1170,6 +1187,7 @@ class MeshletCulling {
+ 
+ 				}
+ 
++				If( record.y.bitAnd( FRUSTUM_INSIDE ).equal( uint( 0 ) ), () => {
+ 				Loop( { name: 'plane', start: 0, end: 6 }, ( { plane: planeIndex } ) => {
+ 
+ 					const plane = frustumPlanes.element( planeIndex );
+@@ -1181,6 +1199,7 @@ class MeshletCulling {
+ 					} );
+ 
+ 				} );
++				} );
+ 
+ 				// the near or the far queue of the batch
+ 
+@@ -1192,7 +1211,7 @@ class MeshletCulling {
+ 
+ 					If( item.lessThan( queueCapacity ), () => {
+ 
+-						workQueue.element( uint( batchObjects.z ).add( queue.mul( queueCapacity ) ).add( item ) ).assign( uvec4( local, lodTriangleStart, lodNumTriangles, chunk ) );
++						workQueue.element( uint( batchObjects.z ).add( queue.mul( queueCapacity ) ).add( item ) ).assign( uvec2( local, lodTriangleStart.add( chunk.mul( MESHLET_SIZE ) ) ) );
+ 
+ 					} );
+ 
+@@ -1207,7 +1226,7 @@ class MeshletCulling {
+ 					} else {
+ 
+ 						const visibilityValue = lodLevel.add( 1 );
+-						const wasVisible = clusterVisibility.element( visibilityIndex ).equal( visibilityValue ).toVar();
++						const wasVisible = readVisibility().equal( visibilityValue ).toVar();
+ 
+ 						if ( phase === 'first' ) {
+ 
+@@ -1227,7 +1246,7 @@ class MeshletCulling {
+ 
+ 							} );
+ 
+-							clusterVisibility.element( visibilityIndex ).assign( select( occluded, uint( 0 ), visibilityValue ) );
++							writeVisibility( select( occluded, uint( 0 ), visibilityValue ) );
+ 
+ 						}
+ 
+@@ -1330,7 +1349,7 @@ class MeshletCulling {
+ 		// the buffers written only by the GPU are created from views of one buffer of zeros, the CPU doesn't keep the
+ 		// initial data of each buffer. the views must not be written
+ 
+-		const zeroBuffer = new ArrayBuffer( Math.max( data * 16, capacity.queue * 4, capacity.clusters, capacity.visibility, capacity.batches * 16 + 2 ) * 4 );
++		const zeroBuffer = new ArrayBuffer( Math.max( data * 16, capacity.queue * 2, capacity.clusters, Math.ceil( capacity.visibility / 8 ), capacity.batches * 16 + 2 ) * 4 );
+ 		const zeros = ( Type, length ) => new Type( zeroBuffer, 0, length );
+ 
+ 		this.capacity = capacity;
+@@ -1357,10 +1376,10 @@ class MeshletCulling {
+ 		this.recordAttribute = create( this.recordArray, 4 );
+ 		this.chunkAttribute = create( this.chunkArray, 4 );
+ 		this.countersAttribute = create( zeros( Uint32Array, 2 + capacity.batches * 2 ), 1 );
+-		this.queueAttribute = create( zeros( Uint32Array, capacity.queue * 4 ), 4 );
++		this.queueAttribute = create( zeros( Uint32Array, capacity.queue * 2 ), 2 );
+ 		this.clusterOwnerAttribute = create( zeros( Uint32Array, Math.max( capacity.clusters, 1 ) ), 1 );
+ 		this.argsAttribute = create( zeros( Uint32Array, capacity.batches * 2 * 4 * 2 ), 4, IndirectStorageBufferAttribute );
+-		this.visibilityAttribute = this.occlusion !== null ? create( zeros( Uint32Array, Math.max( capacity.visibility, 1 ) ), 1 ) : null;
++		this.visibilityAttribute = this.occlusion !== null ? create( zeros( Uint32Array, Math.max( Math.ceil( capacity.visibility / 8 ), 1 ) ), 1 ) : null;
+ 
+ 		this.prepassArgsOffset = capacity.batches * 2 * 4 * 4;
+ 
+@@ -1936,6 +1955,8 @@ class MeshletGeometryPool {
+ 		// the geometries in the pool and the elements of the removed geometries, which are reclaimed by compact()
+ 
+ 		this.geometries = new Map();
++		this.freeVertices = [];
++		this.freeIndices = [];
+ 		this.wasted = 0;
+ 
+ 		// changes when the geometries move, the tables of the geometries of the cullings are built again
+@@ -1957,8 +1978,10 @@ class MeshletGeometryPool {
+ 		if ( geometry !== undefined ) return geometry.triangleBase;
+ 
+ 		const { vertexArray, indexArray, stride } = clusters;
+-		const vertexBase = this.vertexEnd;
+-		const indexBase = this.indexEnd;
++		const vertexRange = this.takeRange( this.freeVertices, vertexArray.length / 4, this.vertexEnd );
++        const indexRange = this.takeRange( this.freeIndices, indexArray.length, this.indexEnd );
++        const vertexBase = vertexRange.offset, indexBase = indexRange.offset;
++        this.wasted = Math.max( 0, this.wasted - ( vertexRange.reused ? vertexArray.length : 0 ) - ( indexRange.reused ? indexArray.length : 0 ) );
+ 
+ 		this.reserve( vertexBase + vertexArray.length / 4, indexBase + indexArray.length );
+ 
+@@ -1971,12 +1994,12 @@ class MeshletGeometryPool {
+ 		this.indexAttribute.addUpdateRange( indexBase, indexArray.length );
+ 		this.indexAttribute.needsUpdate = true;
+ 
+-		this.vertexEnd += vertexArray.length / 4;
+-		this.indexEnd += indexArray.length;
++		this.vertexEnd = Math.max( this.vertexEnd, vertexBase + vertexArray.length / 4 );
++		this.indexEnd = Math.max( this.indexEnd, indexBase + indexArray.length );
+ 
+ 		const triangleBase = indexBase / 3;
+ 
+-		this.geometries.set( clusters, { triangleBase, size: vertexArray.length + indexArray.length } );
++		this.geometries.set( clusters, { triangleBase, vertexBase, indexBase, vertices: vertexArray.length / 4, indices: indexArray.length, size: vertexArray.length + indexArray.length } );
+ 
+ 		return triangleBase;
+ 
+@@ -1995,6 +2018,8 @@ class MeshletGeometryPool {
+ 
+ 		this.geometries.delete( clusters );
+ 		this.wasted += geometry.size;
++        this.releaseRange( this.freeVertices, geometry.vertexBase, geometry.vertices );
++        this.releaseRange( this.freeIndices, geometry.indexBase, geometry.indices );
+ 
+ 	}
+ 
+@@ -2004,7 +2029,7 @@ class MeshletGeometryPool {
+ 	 */
+ 	update() {
+ 
+-		if ( this.wasted > 0 && this.wasted > ( this.vertexEnd * 4 + this.indexEnd ) / 2 ) this.compact();
++		if ( this.keepCapacity !== true && this.wasted > 0 && this.wasted > ( this.vertexEnd * 4 + this.indexEnd ) / 2 ) this.compact();
+ 
+ 	}
+ 
+@@ -2032,6 +2057,8 @@ class MeshletGeometryPool {
+ 		this.indexEnd = 0;
+ 		this.wasted = 0;
+ 		this.geometries.clear();
++		this.freeVertices = [];
++		this.freeIndices = [];
+ 
+ 		for ( const clusters of geometries ) this.add( clusters );
+ 
+@@ -2045,6 +2072,23 @@ class MeshletGeometryPool {
+ 	 * @param {number} vertices - The number of vec4 elements of the vertices.
+ 	 * @param {number} indices - The number of indices.
+ 	 */
++    takeRange( ranges, length, end ) {
++        let best = -1;
++        for ( let i = 0; i < ranges.length; i++ ) if ( ranges[i].length >= length && (best < 0 || ranges[i].length < ranges[best].length) ) best = i;
++        if ( best < 0 ) return { offset: end, reused: false };
++        const range = ranges[best], offset = range.offset;
++        range.offset += length; range.length -= length;
++        if ( range.length === 0 ) ranges.splice( best, 1 );
++        return { offset, reused: true };
++    }
++
++    releaseRange( ranges, offset, length ) {
++        ranges.push( { offset, length } ); ranges.sort( (a,b) => a.offset - b.offset );
++        for ( let i = ranges.length - 2; i >= 0; i-- ) if ( ranges[i].offset + ranges[i].length === ranges[i+1].offset ) {
++            ranges[i].length += ranges[i+1].length; ranges.splice(i+1,1);
++        }
++    }
++
+ 	reserve( vertices, indices ) {
+ 
+ 		if ( vertices * 4 > this.vertexArray.length ) {
+@@ -3350,7 +3394,7 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 		 * @type {{clusters: number, triangles: number}}
+ 		 * @readonly
+ 		 */
+-		this.info = { clusters: 0, triangles: 0 };
++		this.info = { clusters: 0, triangles: 0, overflow: false, queueOverflow: 0, clusterOverflow: 0 };
+ 
+ 		/**
+ 		 * Whether the clusters (meshlets) of the objects drawn by the GPU-driven pipeline should be shown
+@@ -3395,6 +3439,7 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 		this._geometryStates = new WeakMap();
+ 		this._checkedGeometries = new WeakSet();
+ 		this._geometryPool = new MeshletGeometryPool();
++		this._geometryPools = new Map( [ [ "", this._geometryPool ] ] );
+ 		this._records = new Set();
+ 
+ 		// the meshlets of disposed geometries are removed, they are processed again if the geometry is drawn again
+@@ -3530,7 +3575,7 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 
+ 		// the vertices of disposed geometries are reclaimed before the render call
+ 
+-		this._geometryPool.update();
++		for ( const pool of this._geometryPools.values() ) pool.update();
+ 
+ 		const renderer = this.renderer;
+ 		const renderTarget = renderer.getRenderTarget();
+@@ -4280,7 +4325,7 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 			source: entry.source !== null ? entry.source.batch : null,
+ 			queueBudget: entry.queueBudget,
+ 			maxChunks: entry.maxChunks,
+-			pool: this._geometryPool,
++			pool: this._poolFor( entry.clusters ),
+ 			view
+ 		} );
+ 
+@@ -4518,7 +4563,7 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 		if ( this._waitingGeometry === this._gpuProjectionId ) {
+ 
+ 			const culling = record.culling;
+-			const resize = culling === null || record.needsResize === true || record.poolVersion !== this._geometryPool.version;
++			const resize = culling === null || record.needsResize === true || record.poolVersion !== this._poolVersion();
+ 			const waiting = new Set();
+ 
+ 			for ( const entry of active ) {
+@@ -4549,7 +4594,7 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 
+ 		// the culling is resized if the visible clusters exceeded a budget in the last read of its counters
+ 
+-		let rebuild = record.culling === null || record.needsResize === true || record.poolVersion !== this._geometryPool.version;
++		let rebuild = record.culling === null || record.needsResize === true || record.poolVersion !== this._poolVersion();
+ 
+ 		record.needsResize = false;
+ 
+@@ -4625,7 +4670,7 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 
+ 			this._addGeometries( record.culling, active );
+ 
+-			record.poolVersion = this._geometryPool.version;
++			record.poolVersion = this._poolVersion();
+ 
+ 			// the budgets of the new buffers are checked after a few projections, the occlusion culling needs the visible
+ 			// clusters of a frame. without it they are checked in this projection, so a render which isn't repeated like
+@@ -4669,6 +4714,8 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 
+ 			const batch = entry.batch;
+ 
++			if ( batch.added === false ) throw new Error( 'Meshlet batch exceeds device storage limits; reduce the workload or increase device limits.' );
++
+ 			// batches drawing into the view own a slice of its instance index range
+ 
+ 			if ( batch.instanceOffset !== undefined ) {
+@@ -4805,6 +4852,7 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 			let exceeded = false;
+ 			let shrink = false;
+ 			let drawn = 0;
++			let queueOverflow = 0;
+ 
+ 			if ( counters[ 0 ] > culling.capacity.clusters ) {
+ 
+@@ -4816,6 +4864,7 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 			for ( const [ entry, batch, index, queueCapacity ] of batches ) {
+ 
+ 				const visible = Math.max( counters[ 1 + index * 2 ], batch.farMaterial !== null ? counters[ 2 + index * 2 ] : 0 );
++				queueOverflow += Math.max( 0, visible - queueCapacity );
+ 
+ 				drawn += Math.min( counters[ 1 + index * 2 ], queueCapacity ) + ( batch.farMaterial !== null ? Math.min( counters[ 2 + index * 2 ], queueCapacity ) : 0 );
+ 
+@@ -4844,6 +4893,9 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 
+ 				this.info.clusters = drawn;
+ 				this.info.triangles = drawn * MESHLET_SIZE;
++				this.info.queueOverflow = queueOverflow;
++				this.info.clusterOverflow = Math.max( 0, counters[ 0 ] - culling.capacity.clusters );
++				this.info.overflow = queueOverflow > 0 || this.info.clusterOverflow > 0;
+ 
+ 			}
+ 
+@@ -4902,7 +4954,7 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 
+ 		if ( this._addGeometries( culling, entries ) === false ) record.needsResize = true;
+ 
+-		record.poolVersion = this._geometryPool.version;
++		record.poolVersion = this._poolVersion();
+ 
+ 		for ( const entry of entries ) {
+ 
+@@ -4968,9 +5020,9 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 		capacity.batches = Math.max( capacity.batches * 2, 16 );
+ 		capacity.objects = grow( capacity.objects, 1024, 16 );
+ 		capacity.data = grow( capacity.data, 1024, shadow === true ? 64 : 128 );
+-		capacity.queue = grow( capacity.queue, 1024, 16 );
++		capacity.queue = grow( capacity.queue, 1024, 8 );
+ 		capacity.clusters = grow( Math.max( Math.min( capacity.clusters, Math.max( capacity.objects * CLUSTERS_PER_OBJECT, MIN_CLUSTER_BUDGET ) ), clusterBudget ), 1024, 4 );
+-		capacity.visibility = grow( capacity.visibility, 0, 4 );
++		capacity.visibility = grow( capacity.visibility, 0, 0.5 );
+ 		capacity.chunks = Math.max( capacity.chunks * 2, 1024 );
+ 
+ 		return capacity;
+@@ -5266,13 +5318,13 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 
+ 		const clusters = this._clusters.get( geometry );
+ 
+-		if ( clusters !== undefined ) this._geometryPool.remove( clusters );
++		if ( clusters !== undefined ) this._poolFor( clusters ).remove( clusters );
+ 
+ 		const groups = this._groupClusters.get( geometry );
+ 
+ 		if ( groups !== undefined ) {
+ 
+-			for ( const groupClusters of groups.values() ) this._geometryPool.remove( groupClusters );
++			for ( const groupClusters of groups.values() ) this._poolFor( groupClusters ).remove( groupClusters );
+ 
+ 		}
+ 
+@@ -5309,8 +5361,9 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 		this._records.clear();
+ 		this._renderListBatches = new WeakMap();
+ 
+-		this._geometryPool.dispose();
++		for ( const pool of this._geometryPools.values() ) pool.dispose();
+ 		this._geometryPool = new MeshletGeometryPool();
++		this._geometryPools = new Map( [ [ "", this._geometryPool ] ] );
+ 
+ 		super.dispose();
+ 
+@@ -5325,7 +5378,7 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 	 */
+ 	_getBatchKey( clusters ) {
+ 
+-		return clusters.layoutKey;
++		return ( clusters.poolKey || "" ) + "|" + clusters.layoutKey;
+ 
+ 	}
+ 
+@@ -5345,7 +5398,7 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 
+ 				if ( culling.getGeometry( clusters ) !== - 1 ) continue;
+ 
+-				if ( culling.addGeometry( clusters, this._geometryPool.add( clusters ) ) === - 1 ) return false;
++				if ( culling.addGeometry( clusters, this._poolFor( clusters ).add( clusters ) ) === - 1 ) return false;
+ 
+ 			}
+ 
+@@ -5377,6 +5430,32 @@ class MeshletDrawingPipeline extends StandardDrawingPipeline {
+ 	 * @param {boolean} [prepare=false] - Whether preprocessing may bypass the per-projection limit.
+ 	 * @return {?Object} The cluster data.
+ 	 */
++    // Register clusters produced off-thread. Keep normal invalidation/disposal semantics.
++    reserveGeometry( vertexElements, indexCount, poolKey = "" ) {
++        if ( ! Number.isInteger( vertexElements ) || ! Number.isInteger( indexCount ) || vertexElements < 0 || indexCount < 0 ) throw new Error( 'Invalid geometry reservation' );
++        const pool = this._poolFor( { poolKey } );
++        pool.keepCapacity = true;
++        pool.reserve( vertexElements, indexCount );
++    }
++
++    _poolFor( clusters ) {
++        const key = clusters.poolKey || "";
++        let pool = this._geometryPools.get( key );
++        if ( pool === undefined ) { pool = new MeshletGeometryPool(); this._geometryPools.set( key, pool ); }
++        return pool;
++    }
++
++    _poolVersion() {
++        return Array.from( this._geometryPools.values(), pool => pool.version ).join( ":" );
++    }
++
++    registerPreparedGeometry( geometry, clusters ) {
++        if ( clusters.geometry !== geometry ) throw new Error( 'Prepared geometry mismatch' );
++        this._updateGeometry( geometry );
++        this._clusters.set( geometry, clusters );
++        if ( geometry.hasEventListener( 'dispose', this._onGeometryDispose ) === false ) geometry.addEventListener( 'dispose', this._onGeometryDispose );
++    }
++
+ 	_getClusters( geometry, group = null, prepare = false ) {
+ 
+ 		this._updateGeometry( geometry );
+@@ -5569,3 +5648,5 @@ function isSameObjects( a, b ) {
+ }
+ 
+ export { MeshletDrawingPipeline, MeshletBatch, cacheAttributes, createDebugMaterial, createDrawMaterial, createOcclusion };
++
++
+diff --git a/node_modules/three/examples/jsm/utils/MeshletGeometryUtils.js b/node_modules/three/examples/jsm/utils/MeshletGeometryUtils.js
+index 90013f9..0aa9275 100644
+--- a/node_modules/three/examples/jsm/utils/MeshletGeometryUtils.js
++++ b/node_modules/three/examples/jsm/utils/MeshletGeometryUtils.js
+@@ -170,6 +170,9 @@ export function createMeshlets( geometry, group = null ) {
+ 	}
+ 
+ 	const vertexCount = sources.length;
++	const sourceLocks = geometry.userData.meshletVertexLocks;
++	const vertexLocks = sourceLocks ? new Uint8Array( vertexCount ) : null;
++	if ( vertexLocks ) for ( let i = 0; i < vertexCount; i ++ ) vertexLocks[ i ] = sourceLocks[ sources[ i ] ];
+ 
+ 	const positions = new Float32Array( vertexCount * 3 );
+ 	const simplifierAttributes = new Float32Array( vertexCount * 5 );
+@@ -227,7 +230,9 @@ export function createMeshlets( geometry, group = null ) {
+ 	let previousError = 0;
+ 	let totalChunks = 0;
+ 
+-	for ( let i = 0; i < LOD_TARGETS.length; i ++ ) {
++	const lodLimit = geometry.userData.meshletFullDetailOnly === true ? 1 : LOD_TARGETS.length;
++
++	for ( let i = 0; i < lodLimit; i ++ ) {
+ 
+ 		let error = 0;
+ 
+@@ -237,12 +242,12 @@ export function createMeshlets( geometry, group = null ) {
+ 			// pruning can reduce a level below the target of the next one
+ 
+ 			const targetIndexCount = Math.min( indices.length, Math.max( 3, Math.floor( sourceIndices.length * target.ratio / 3 ) * 3 ) );
+-			let simplified = MeshoptSimplifier.simplifyWithAttributes( indices, positions, 3, simplifierAttributes, 5, target.weights, null, targetIndexCount, target.error, target.flags );
++			let simplified = MeshoptSimplifier.simplifyWithAttributes( indices, positions, 3, simplifierAttributes, 5, target.weights, vertexLocks, targetIndexCount, target.error, target.flags );
+ 
+ 			// if the topology blocks the simplification, the level is simplified without preserving it. the
+ 			// error of the level grows accordingly, so the level is only selected if it isn't noticeable
+ 
+-			if ( indices.length > targetIndexCount && simplified[ 0 ].length > indices.length * MIN_LOD_REDUCTION ) {
++			if ( vertexLocks === null && indices.length > targetIndexCount && simplified[ 0 ].length > indices.length * MIN_LOD_REDUCTION ) {
+ 
+ 				const sloppy = MeshoptSimplifier.simplifySloppy( indices, positions, 3, null, targetIndexCount, target.error * SLOPPY_ERROR_SCALE );
+ 
