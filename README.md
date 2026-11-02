@@ -20,6 +20,8 @@ The current maximum-detail scene was developed on an RTX 5080 and typically allo
 
 ## Explore
 
+An optional drivable Raptor now starts on the valley floor. Install your downloaded model using the [vehicle setup instructions](docs/VEHICLE.md). It includes independent wheel/suspension motion, compound collision, persistent collision terrain, mouse-orbit camera and flip/recovery controls. The third-party model is not bundled.
+
 - Click or drag to look; WASD moves. F toggles walking/flying. Q/E moves vertically in fly mode; Shift increases speed.
 - Maximum HLOD and full resident detail are the defaults. Region, Ridge, Ground and River select inspection views.
 - Lighting / clouds controls cloud cover, exposure and cloud animation.

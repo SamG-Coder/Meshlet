@@ -7,6 +7,7 @@ import { unpackMeshlets } from './meshlet-transfer.js';
 import { balanceCover, coverEdgeFlags } from './terrain-hlod.js';
 import { makeSurface, hash } from './terrain-surface.js';
 import { createTerrainLighting } from './terrain-lighting.js';
+import { createTerrainVehicle } from './terrain-vehicle.js';
 
 const $=id=>document.getElementById(id),fmt=n=>Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:2}).format(n);
 const state={errors:[],ready:false,records:[],transitions:0,workerMs:[],installMs:[]};
@@ -51,17 +52,18 @@ async function start(){
  const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,.1,90000);
  const viewTarget=new THREE.Vector3(),lookEuler=new THREE.Euler(0,0,0,'YXZ');
  let fly=false,verticalVelocity=0,dragLook=null,canLock=true;
+ let vehicle=null;
  const canvas=renderer.domElement;
- function setFly(value){fly=value;verticalVelocity=0;$('camera-mode').textContent=fly?'Fly mode / F to walk':'Walk mode / F to fly';document.body.dataset.cameraMode=fly?'fly':'walk';}
+ function setFly(value){vehicle?.setActive(false);fly=value;verticalVelocity=0;$('camera-mode').textContent=fly?'Fly mode / F to walk':'Walk mode / F to fly';document.body.dataset.cameraMode=fly?'fly':'walk';}
  $('camera-mode').onclick=()=>setFly(!fly);
  const locked=()=>document.pointerLockElement===canvas;
- function look(dx,dy){lookEuler.setFromQuaternion(camera.quaternion);lookEuler.y-=dx*.0016;lookEuler.x=Math.max(-Math.PI/2+.02,Math.min(Math.PI/2-.02,lookEuler.x-dy*.0016));camera.quaternion.setFromEuler(lookEuler);}
+ function look(dx,dy){if(vehicle?.active){vehicle.orbit(dx,dy);return;}lookEuler.setFromQuaternion(camera.quaternion);lookEuler.y-=dx*.0016;lookEuler.x=Math.max(-Math.PI/2+.02,Math.min(Math.PI/2-.02,lookEuler.x-dy*.0016));camera.quaternion.setFromEuler(lookEuler);}
  canvas.addEventListener('pointerdown',e=>{if(e.button!==0)return;dragLook={x:e.clientX,y:e.clientY,distance:0};canvas.setPointerCapture(e.pointerId);});
  canvas.addEventListener('pointermove',e=>{if(locked()||!dragLook)return;const dx=e.clientX-dragLook.x,dy=e.clientY-dragLook.y;look(dx,dy);dragLook.distance+=Math.abs(dx)+Math.abs(dy);dragLook.x=e.clientX;dragLook.y=e.clientY;});
  canvas.addEventListener('pointerup',async e=>{
   const click=dragLook&&dragLook.distance<3;dragLook=null;
   if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);
-  if(click&&canLock&&!locked()&&canvas.requestPointerLock){
+  if(click&&!vehicle?.active&&canLock&&!locked()&&canvas.requestPointerLock){
    try{await canvas.requestPointerLock();}catch{canLock=false;document.body.dataset.lookInput='drag';}
   }
  });
@@ -269,11 +271,19 @@ async function start(){
  const shared=buffer=>{if(!crossOriginIsolated||typeof SharedArrayBuffer==='undefined')return buffer;const b=new SharedArrayBuffer(buffer.byteLength);new Uint8Array(b).set(new Uint8Array(buffer));return b;};
  const init={type:'init',height:shared(heightBuffer),fields:shared(fieldBuffer),detail:shared(groundBakes.height.data.buffer),detailConfig:groundBakes.meta,size:meta.size,previewSize:meta.previewSize,worldSize:world};
  state.sharedWorkerData=crossOriginIsolated;for(const channel of workers)channel.worker.postMessage(init);
- const keys=new Set();addEventListener('keydown',e=>{if(e.target.matches('input,select'))return;if(e.code==='KeyF'&&!e.repeat){setFly(!fly);return;}keys.add(e.code);if(['KeyW','KeyA','KeyS','KeyD','KeyQ','KeyE'].includes(e.code))e.preventDefault();});addEventListener('keyup',e=>keys.delete(e.code));addEventListener('blur',()=>keys.clear());
+ function toggleDrive(){if(!vehicle)return;vehicle.setActive(!vehicle.active);keys.clear();verticalVelocity=0;}
+ $('drive').onclick=toggleDrive;$('vehicle-reset').onclick=()=>vehicle?.reset();$('vehicle-flip').onclick=()=>vehicle?.flip();$('vehicle-spawn').onclick=()=>{vehicle?.spawn();vehicle?.setActive(true);};
+ const keys=new Set();addEventListener('keydown',e=>{if(e.target.matches('input,select'))return;if(e.code==='KeyV'&&!e.repeat){toggleDrive();return;}if(e.code==='KeyR'&&vehicle?.active&&!e.repeat){vehicle.reset();return;}if(e.code==='KeyF'&&!e.repeat){setFly(!fly);return;}keys.add(e.code);if(['KeyW','KeyA','KeyS','KeyD','KeyQ','KeyE','Space'].includes(e.code))e.preventDefault();});addEventListener('keyup',e=>keys.delete(e.code));addEventListener('blur',()=>keys.clear());
+ // Broad low valley in the accepted map, selected from source height/slope data.
+ // Search the surrounding patch for a level parking footprint without editing it.
+ let parking={x:-8296,z:752},bestParking=Infinity;
+ for(let z=720;z<=800;z+=4)for(let x=-8340;x<=-8250;x+=4){const h=surface.height(x,z);let error=0;for(const [dx,dz] of [[-3,-4],[3,-4],[-3,4],[3,4]])error+=Math.abs(surface.height(x+dx,z+dz)-h);const score=error+Math.hypot(x+8296,z-752)*.001;if(score<bestParking){bestParking=score;parking={x,z};}}
+ createTerrainVehicle(renderer,surface,parking,lighting).then(v=>{vehicle=v;for(const id of ['drive','vehicle-reset','vehicle-spawn','vehicle-flip'])$(id).disabled=false;v.setActive(true);}).catch(e=>{$('vehicle-status').textContent='Raptor unavailable: '+e.message;document.body.dataset.vehicleError=e.stack;});
  const forward=new THREE.Vector3(),right=new THREE.Vector3(),move=new THREE.Vector3();let previous=0,lastHud=0,motion=null;
  renderer.setAnimationLoop(time=>{
   const dt=previous?time-previous:16.7;previous=time;clock.value=time/1000;
-  if(keys.size){
+  vehicle?.update(Math.min(dt,100)*.001,keys,camera,time);
+  if(keys.size&&!vehicle?.active){
    camera.getWorldDirection(forward);if(!fly)forward.y=0;forward.normalize();right.crossVectors(forward,camera.up).normalize();
    move.set(0,0,0);if(keys.has('KeyW'))move.add(forward);if(keys.has('KeyS'))move.sub(forward);if(keys.has('KeyD'))move.add(right);if(keys.has('KeyA'))move.sub(right);
    if(fly){if(keys.has('KeyE'))move.y++;if(keys.has('KeyQ'))move.y--;}
@@ -282,8 +292,8 @@ async function start(){
   }
   if(motion){const t=Math.min(1,(time-motion.start)/12000);camera.position.copy(motion.camera).addScaledVector(motion.direction,t*220);}
   const floor=surface.height(camera.position.x,camera.position.z)+1.8;
-  if(!fly){verticalVelocity-=18*Math.min(dt,50)*.001;camera.position.y+=verticalVelocity*Math.min(dt,50)*.001;}
-  if(camera.position.y<floor){camera.position.y=floor;verticalVelocity=0;}
+  if(!vehicle?.active){if(!fly){verticalVelocity-=18*Math.min(dt,50)*.001;camera.position.y+=verticalVelocity*Math.min(dt,50)*.001;}
+  if(camera.position.y<floor){camera.position.y=floor;verticalVelocity=0;}}
   const uploadStart=performance.now();let installed=false,uploads=0;
   while(incoming.length&&uploads<4&&performance.now()-uploadStart<3){installed=install(incoming.shift())||installed;uploads++;}
   if(installed){updateCover();pump();}

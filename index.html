@@ -3,6 +3,12 @@
 <div id="viewport"></div><div id="crosshair">+</div>
 <header><div class="eyebrow">STRATA / EROSION LABORATORY</div><h1>Across the badlands.</h1><p>Pale strata. Branching gullies. Broken stone.</p><p id="area"></p></header>
 <aside>
+ <div class="section">RAPTOR / OFF-ROAD</div>
+ <button id="drive" disabled>Loading Raptor...</button>
+ <div class="buttons"><button id="vehicle-flip" disabled>Flip upright</button><button id="vehicle-reset" disabled>Recover / R</button></div>
+ <button id="vehicle-spawn" disabled>Return to valley start</button>
+ <p id="vehicle-status" class="fine">Loading wheels / suspension...</p>
+ <p class="fine">W throttle · S brake / reverse · A D steer · Space handbrake · V enter / exit · Hold left mouse to orbit</p>
  <div class="section">01 / SURFACE</div>
  <label>Material inspection<select id="surface"><option value="natural">Pale rock / baked fractures</option><option value="sediment">Deposited material composition</option><option value="erosion">Cumulative erosion</option><option value="deposition">Cumulative deposition</option><option value="wetness">Source water / retained moisture</option></select></label>
  <label>HLOD tile budget<select id="budget"><option value="96">96 tiles / responsive</option><option value="192">192 tiles / detailed</option><option value="384">384 tiles / high detail</option><option value="768" selected>Maximum / 768 tiles</option></select></label>
@@ -29,5 +35,5 @@
  <p id="status">Loading erosion bake...</p><p id="result"></p><p class="fine" id="provenance"></p>
 </aside>
 <footer><div><small>POTENTIAL TRIANGLES</small><strong id="logical">...</strong></div><div><small>RESIDENT / DRAWN</small><strong id="triangles">...</strong></div><div><small>FRAME RATE</small><strong id="fps">...</strong></div><div><small>TRACKED GPU</small><strong id="memory">...</strong></div></footer>
-<div class="controls">CLICK OR DRAG TO LOOK / ESC RELEASE / WASD MOVE / F WALK-FLY / Q E FLY DOWN-UP / SHIFT FAST</div>
+<div class="controls">WASD DRIVE / SPACE HANDBRAKE / V ENTER-EXIT / R RECOVER / F WALK-FLY / ESC RELEASE</div>
 <script type="module" src="/src/terrain.js"></script></body></html>

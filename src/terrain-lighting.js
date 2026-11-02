@@ -235,9 +235,22 @@ export async function createTerrainLighting(renderer,scene,camera,material,heigh
  }
  // Only specular environment light is added here; diffuse sky light is baked.
  material.setupEnvironment=()=>new SkySpecular();
+ let vehicleScene=null;
+ function prepareVehicleMaterial(mat){
+  mat.setupEnvironment=()=>new SkySpecular();
+  // Ground irradiance supplies local canyon occlusion/bounce; orientation-aware
+  // hemisphere lighting is added by the vehicle scene for vertical body panels.
+  mat.setupLightMap=()=>new THREE.IrradianceNode(irradiance.mul(.35));
+ }
+ function configureVehicleScene(s){
+  const light=new THREE.DirectionalLight(0xffffff,1);
+  light.colorNode=sunEnergy.mul(texture(visibility,vec3(groundUV.x,groundUV.y.oneMinus(),0).xy).r).mul(movingShadow);
+  light.castShadow=true;light.shadow.mapSize.set(1024,1024);light.shadow.camera.left=-12;light.shadow.camera.right=12;light.shadow.camera.top=12;light.shadow.camera.bottom=-12;light.shadow.camera.near=.5;light.shadow.camera.far=80;light.shadow.bias=-.0002;light.shadow.normalBias=.025;
+  s.add(light,light.target,new THREE.HemisphereLight(0xb8ccdf,0x6c6555,.9));return light;
+ }
  function resize(w,h){sceneTarget.setSize(w,h);refractionTarget.setSize(w,h);cloudTarget.setSize(Math.ceil(w*.5),Math.ceil(h*.5));}
  resize(innerWidth,innerHeight);
- return {meta,waterMeta:water.meta,resize,render(time){
+ return {meta,waterMeta:water.meta,resize,prepareVehicleMaterial,configureVehicleScene,sunDirection:sunDirection.value,setVehicleScene(s){vehicleScene=s;},render(time){
   if(previous&&!paused)cloudTime.value+=Math.min(.1,(time-previous)/1000);previous=time;
   const pipeline=renderer.drawingPipeline;
   renderer.drawingPipeline=fullscreenPipeline;
@@ -246,6 +259,7 @@ export async function createTerrainLighting(renderer,scene,camera,material,heigh
   renderer.drawingPipeline=pipeline;
   renderer.setRenderTarget(sceneTarget);renderer.render(scene,camera);
   renderer.drawingPipeline=fullscreenPipeline;
+  if(vehicleScene){const clear=renderer.autoClear;renderer.autoClear=false;renderer.render(vehicleScene,camera);renderer.autoClear=clear;}
   renderer.setRenderTarget(refractionTarget);copyQuad.render(renderer);
   renderer.setRenderTarget(sceneTarget);
   water.render();

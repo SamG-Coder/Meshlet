@@ -15,9 +15,10 @@
     "postinstall": "patch-package",
     "assets": "node scripts/assets.mjs",
     "assets:check": "node scripts/assets.mjs --check",
-    "test": "node scripts/verify-terrain.mjs"
+    "test": "node scripts/verify-terrain.mjs && node scripts/check-vehicle.mjs"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "0.21.0",
     "three": "0.187.0"
   },
   "devDependencies": {
